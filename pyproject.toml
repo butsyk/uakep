@@ -1,0 +1,54 @@
+[project]
+name = "uakep"
+version = "0.1.0.dev0"
+description = "Ukrainian qualified electronic signatures (КЕП, ДСТУ 4145-2002) in pure Python"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Anton Butsyk" }]
+requires-python = ">=3.11"
+dependencies = ["asn1crypto>=1.5.1"]
+keywords = ["dstu4145", "kep", "cades", "prro", "ukraine"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Security :: Cryptography",
+]
+
+[project.urls]
+Repository = "https://github.com/butsyk/uakep"
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-cov>=6", "ruff>=0.14"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+# Ukrainian text in docstrings and messages is intentional.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "interop: cross-checks against the reference implementation in interop/",
+    "slow: long-running randomized tests",
+]
+
+[tool.coverage.run]
+source = ["uakep"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]

@@ -1,0 +1,26 @@
+uakep
+Copyright (c) 2026 Anton Butsyk. Licensed under the MIT License (see LICENSE).
+
+uakep contains code ported from the projects below. Their notices are kept here.
+
+-------------------------------------------------------------------------------
+jkurwa — https://github.com/dstucrypt/jkurwa
+Author: Ilya Petrov (Illya Petrov)
+License: BSD, as declared in the project's package.json. The repository has no
+LICENSE file; which BSD text applies is being confirmed with the author.
+
+Ported into uakep: GF(2^m) arithmetic (lib/gf2m.js, lib/field.js), binary curves
+and named curves (lib/curve.js, lib/point.js, lib/standard.js), ДСТУ 4145 signing
+and verification including the fixed-length signing scalar (lib/models/Priv.js,
+lib/models/Pub.js), key containers (lib/spec/keystore.js, lib/spec/pbes.js,
+lib/spec/pfx.js), certificates and CMS/CAdES structures (lib/models/Certificate.js,
+lib/models/Message.js, lib/spec/*.js).
+
+-------------------------------------------------------------------------------
+gost89 — https://github.com/dstucrypt/gost89
+Author: Ilya Petrov (Illya Petrov)
+License: BSD, as declared in the project's package.json.
+
+Ported into uakep: the ГОСТ 28147-89 block cipher and its ECB, CFB and MAC modes
+(lib/gost89.js), the ГОСТ 34.311-95 hash (lib/hash.js), the s-box tables
+(lib/dstu.js) and the password-based key derivation (lib/util.js).

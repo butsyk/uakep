@@ -1,0 +1,11 @@
+{
+  "name": "uakep-interop",
+  "private": true,
+  "description": "Runs jkurwa from npm so uakep's tests can cross-check signatures both ways",
+  "type": "module",
+  "dependencies": {
+    "dstu7564": "1.1.1",
+    "gost89": "0.1.12",
+    "jkurwa": "1.23.2"
+  }
+}

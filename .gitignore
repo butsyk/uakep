@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node harness for interop tests
+interop/node_modules/
+
+# PyCharm
+.idea/
