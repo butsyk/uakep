@@ -60,6 +60,14 @@ class PublicKey:
     def compressed(self) -> int:
         return self.curve.compress(self.point)
 
+    def to_octet_string(self) -> bytes:
+        """DER OCTET STRING of the compressed point, little-endian, as certificates carry it.
+
+        CAs hash these bytes for the certificate's subjectKeyIdentifier.
+        """
+        raw = self.compressed().to_bytes((self.curve.m + 7) // 8, "little")
+        return bytes([0x04, len(raw)]) + raw
+
     def verify(self, digest: bytes, signature: bytes) -> bool:
         """Check ``signature`` (``r || s``) over a hash value."""
         r, s = decode_signature(signature)

@@ -50,14 +50,8 @@ def password_candidates(password: str | bytes) -> Iterator[bytes]:
 
 
 def key_identifier(key: PrivateKey) -> bytes:
-    """ГОСТ 34.311 hash of the DER OCTET STRING of the compressed public key (little-endian).
-
-    CAs put this value in the certificate's subjectKeyIdentifier; IIT key containers store it
-    beside each key.
-    """
-    pub = key.public_key()
-    raw = pub.compressed().to_bytes((key.curve.m + 7) // 8, "little")
-    return gost34311(core.OctetString(raw).dump())
+    """ГОСТ 34.311 hash of the public key's DER OCTET STRING, as IIT stores it beside each key."""
+    return gost34311(key.public_key().to_octet_string())
 
 
 def read_key6(data: bytes, password: str | bytes) -> list[PrivateKey]:

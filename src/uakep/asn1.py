@@ -192,6 +192,24 @@ class IssuerAndSerialNumber(core.Sequence):
     _fields = [("issuer", x509.Name), ("serial_number", core.Integer)]
 
 
+class SignerIdExplicit(core.Choice):
+    """The signer id as the tax samples write it: [0] EXPLICIT OCTET STRING for a key id."""
+
+    _alternatives = [
+        ("issuer_and_serial_number", IssuerAndSerialNumber),
+        ("subject_key_identifier", core.OctetString, {"explicit": 0}),
+    ]
+
+
+class SignerIdImplicit(core.Choice):
+    """The signer id as RFC 5652 defines it: [0] IMPLICIT for a key id."""
+
+    _alternatives = [
+        ("issuer_and_serial_number", IssuerAndSerialNumber),
+        ("subject_key_identifier", core.OctetString, {"implicit": 0}),
+    ]
+
+
 class SignerInfo(core.Sequence):
     _fields = [
         ("version", core.Integer),
@@ -241,6 +259,32 @@ class ContentInfo(core.Sequence):
     ]
     _oid_pair = ("content_type", "content")
     _oid_specs = {ID_SIGNED_DATA: SignedData}
+
+
+class GeneralNames(core.SequenceOf):
+    _child_spec = x509.GeneralName
+
+
+class IssuerSerial(core.Sequence):
+    _fields = [("issuer", GeneralNames), ("serial_number", core.Integer)]
+
+
+class ESSCertIDv2(core.Sequence):
+    """RFC 5035; the hash algorithm is always written, as SHA-256 is never used here."""
+
+    _fields = [
+        ("hash_algorithm", AlgorithmIdentifier, {"optional": True}),
+        ("cert_hash", core.OctetString),
+        ("issuer_serial", IssuerSerial, {"optional": True}),
+    ]
+
+
+class ESSCertIDsV2(core.SequenceOf):
+    _child_spec = ESSCertIDv2
+
+
+class SigningCertificateV2(core.Sequence):
+    _fields = [("certs", ESSCertIDsV2), ("policies", core.Any, {"optional": True})]
 
 
 def curve_from_spec(spec: CurveSpec, *, little_endian: bool = True) -> Curve:

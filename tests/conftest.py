@@ -77,3 +77,41 @@ def peer():
 @pytest.fixture(scope="session")
 def interop_rounds() -> int:
     return int(os.environ.get("UAKEP_INTEROP_ROUNDS", "30"))
+
+
+def certificate_for(key, template: str = "DSTU_sign.cer"):
+    """A copy of a ЦЗО test certificate carrying ``key``'s public key and key identifier.
+
+    The issuer's signature on it no longer matches; CMS signing and verification do not
+    look at it. The ДСТУ 7564 template gives a Купина certificate.
+    """
+    from asn1crypto import core, x509
+
+    from uakep import asn1
+    from uakep.certificate import Certificate
+    from uakep.gost34311 import gost34311
+    from uakep.kupyna import kupyna256
+
+    cert = asn1.Certificate.load(Certificate.load(data_file("czo", template)).der)
+    tbs = cert["tbs_certificate"]
+    octets = key.public_key().to_octet_string()
+    spki = tbs["subject_public_key_info"]
+    tbs["subject_public_key_info"] = asn1.SubjectPublicKeyInfo(
+        {
+            "algorithm": spki["algorithm"],
+            "public_key": core.BitString.load(bytes([0x03, len(octets) + 1, 0]) + octets),
+        }
+    )
+    key_id = kupyna256(octets) if "7564" in template else gost34311(octets)
+
+    class _Extension(core.Sequence):
+        _fields = [("extn_id", core.ObjectIdentifier), ("extn_value", core.OctetString)]  # noqa: RUF012
+
+    ski = x509.Extension.load(
+        _Extension({"extn_id": "2.5.29.14", "extn_value": core.OctetString(key_id).dump()}).dump()
+    )
+    others = [e for e in tbs["extensions"] if e["extn_id"].dotted != "2.5.29.14"]
+    tbs["extensions"] = x509.Extensions([*others, ski])
+    fields = ("tbs_certificate", "signature_algorithm", "signature_value")
+    cert = asn1.Certificate({name: cert[name] for name in fields})
+    return Certificate(cert.dump())
