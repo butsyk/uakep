@@ -1,0 +1,29 @@
+name: Release
+
+# Pushing a tag vX.Y.Z publishes that version to PyPI through trusted publishing:
+# PyPI trusts this workflow in the "pypi" environment, so no token exists anywhere.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/uakep/
+    permissions:
+      contents: read
+      id-token: write  # the OIDC token PyPI checks
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+      - name: The tag names the package's version
+        run: test "${GITHUB_REF_NAME}" = "v$(uv version --short)"
+      - run: uv run pytest -q -m "not interop"
+      - run: uv build
+      - run: uv publish --trusted-publishing always
