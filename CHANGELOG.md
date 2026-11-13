@@ -4,6 +4,8 @@ Notable changes to uakep, newest first. The format follows [Keep a Changelog](ht
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-13
+
 The first release.
 
 ### Added
@@ -16,3 +18,6 @@ The first release.
 - ДСТУ 4145-2002 on binary curves, the ГОСТ 34.311-95 and ДСТУ 7564 «Купина» hashes, and the ГОСТ 28147-89 cipher, in pure Python.
 
 Not yet proven: a test shift accepted by the fiscal server with a real key, the gate of milestone 0.2.
+
+[Unreleased]: https://github.com/butsyk/uakep/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/butsyk/uakep/releases/tag/v0.1.0
