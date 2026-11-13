@@ -8,7 +8,7 @@ key attributes they are big-endian.
 
 from __future__ import annotations
 
-from asn1crypto import core, x509
+from asn1crypto import core, tsp, x509
 
 from .curve import NAMED_CURVES, Curve
 
@@ -261,6 +261,84 @@ class ContentInfo(core.Sequence):
     _oid_specs = {ID_SIGNED_DATA: SignedData}
 
 
+# Password-protected keys: PKCS#8 EncryptedPrivateKeyInfo with PBES2 (RFC 8018), PKCS#12 (RFC 7292)
+
+ID_ENCRYPTED_DATA = "1.2.840.113549.1.7.6"
+KEY_BAG = "1.2.840.113549.1.12.10.1.1"
+SHROUDED_KEY_BAG = "1.2.840.113549.1.12.10.1.2"
+CERT_BAG = "1.2.840.113549.1.12.10.1.3"
+SAFE_CONTENTS_BAG = "1.2.840.113549.1.12.10.1.6"
+X509_CERTIFICATE = "1.2.840.113549.1.9.22.1"
+JKS_KEY_PROTECTOR = "1.3.6.1.4.1.42.2.17.1.1"
+
+
+class EncryptedPrivateKeyInfo(core.Sequence):
+    _fields = [("encryption_algorithm", AlgorithmIdentifier), ("encrypted_data", core.OctetString)]
+
+
+class Pbes2Params(core.Sequence):
+    _fields = [
+        ("key_derivation_func", AlgorithmIdentifier),
+        ("encryption_scheme", AlgorithmIdentifier),
+    ]
+
+
+class Pbkdf2Params(core.Sequence):
+    _fields = [
+        ("salt", core.OctetString),
+        ("iteration_count", core.Integer),
+        ("key_length", core.Integer, {"optional": True}),
+        ("prf", AlgorithmIdentifier, {"optional": True}),
+    ]
+
+
+class Gost28147Params(core.Sequence):
+    _fields = [("iv", core.OctetString), ("dke", core.OctetString, {"optional": True})]
+
+
+class SafeBag(core.Sequence):
+    _fields = [
+        ("bag_id", core.ObjectIdentifier),
+        ("bag_value", core.Any, {"explicit": 0}),
+        ("bag_attributes", Attributes, {"optional": True}),
+    ]
+
+
+class SafeContents(core.SequenceOf):
+    _child_spec = SafeBag
+
+
+class CertBag(core.Sequence):
+    _fields = [
+        ("cert_id", core.ObjectIdentifier),
+        ("cert_value", core.OctetString, {"explicit": 0}),
+    ]
+
+
+class EncryptedContentInfo(core.Sequence):
+    _fields = [
+        ("content_type", core.ObjectIdentifier),
+        ("content_encryption_algorithm", AlgorithmIdentifier),
+        ("encrypted_content", core.OctetString, {"implicit": 0, "optional": True}),
+    ]
+
+
+class EncryptedData(core.Sequence):
+    _fields = [("version", core.Integer), ("encrypted_content_info", EncryptedContentInfo)]
+
+
+class AuthenticatedSafe(core.SequenceOf):
+    _child_spec = ContentInfo
+
+
+class Pfx(core.Sequence):
+    _fields = [
+        ("version", core.Integer),
+        ("auth_safe", ContentInfo),
+        ("mac_data", core.Any, {"optional": True}),
+    ]
+
+
 class GeneralNames(core.SequenceOf):
     _child_spec = x509.GeneralName
 
@@ -285,6 +363,15 @@ class ESSCertIDsV2(core.SequenceOf):
 
 class SigningCertificateV2(core.Sequence):
     _fields = [("certs", ESSCertIDsV2), ("policies", core.Any, {"optional": True})]
+
+
+class TimeStampResp(core.Sequence):
+    """RFC 3161 TimeStampResp with the token kept raw: it is CMS signed data with ДСТУ keys."""
+
+    _fields = [
+        ("status", tsp.PKIStatusInfo),
+        ("time_stamp_token", core.Any, {"optional": True}),
+    ]
 
 
 def curve_from_spec(spec: CurveSpec, *, little_endian: bool = True) -> Curve:
