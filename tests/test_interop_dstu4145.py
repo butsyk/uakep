@@ -1,5 +1,5 @@
-"""Differential tests: uakep and the reference implementation in interop/ check each
-other's ДСТУ 4145 signatures.
+"""Compatibility: uakep and the JavaScript peer in interop/ check each other's ДСТУ 4145
+signatures. A disagreement needs a look at the standard; neither side is the source of truth.
 
 Rounds come from UAKEP_INTEROP_ROUNDS (default 30; CI runs more). Each failure message carries
 the seed (UAKEP_INTEROP_SEED) so a run can be replayed.
@@ -19,12 +19,12 @@ CURVES = [DSTU_PB_191, DSTU_PB_257, DSTU_PB_257, DSTU_PB_257, DSTU_PB_431]
 SEED = int(os.environ.get("UAKEP_INTEROP_SEED", random.SystemRandom().randrange(1 << 32)))
 
 
-def test_harness_rejects_unknown_ops(reference):
+def test_harness_rejects_unknown_ops(peer):
     with pytest.raises(RuntimeError, match="unknown op"):
-        reference.call("no-such-op")
+        peer.call("no-such-op")
 
 
-def test_signatures_cross_verify(reference, interop_rounds):
+def test_signatures_cross_verify(peer, interop_rounds):
     rng = random.Random(SEED)
     for i in range(interop_rounds):
         curve = rng.choice(CURVES)
@@ -34,19 +34,19 @@ def test_signatures_cross_verify(reference, interop_rounds):
         common = {"curve": curve.name, "hash": digest.hex()}
 
         pub = key.public_key()
-        theirs = int(reference.call("pub", curve=curve.name, d=f"{key.d:x}")["pub"], 16)
+        theirs = int(peer.call("pub", curve=curve.name, d=f"{key.d:x}")["pub"], 16)
         assert pub.compressed() == theirs, where
         assert PublicKey.from_compressed(curve, theirs) == pub, where
 
-        their_sig = bytes.fromhex(reference.call("sign", d=f"{key.d:x}", **common)["sig"])
-        assert pub.verify(digest, their_sig), f"uakep rejects the reference signature: {where}"
+        their_sig = bytes.fromhex(peer.call("sign", d=f"{key.d:x}", **common)["sig"])
+        assert pub.verify(digest, their_sig), f"uakep rejects the peer's signature: {where}"
 
         our_sig = key.sign(digest)
-        answer = reference.call("verify", pub=f"{theirs:x}", sig=our_sig.hex(), **common)
-        assert answer["ok"], f"the reference rejects uakep's signature ({answer}): {where}"
+        answer = peer.call("verify", pub=f"{theirs:x}", sig=our_sig.hex(), **common)
+        assert answer["ok"], f"the peer rejects uakep's signature ({answer}): {where}"
 
         bad = bytearray(our_sig)
         bad[rng.randrange(len(bad))] ^= 1 << rng.randrange(8)
-        answer = reference.call("verify", pub=f"{theirs:x}", sig=bad.hex(), **common)
-        assert not answer["ok"], f"the reference accepts a damaged signature: {where}"
+        answer = peer.call("verify", pub=f"{theirs:x}", sig=bad.hex(), **common)
+        assert not answer["ok"], f"the peer accepts a damaged signature: {where}"
         assert not pub.verify(digest, bytes(bad)), f"uakep accepts a damaged signature: {where}"

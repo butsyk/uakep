@@ -10,7 +10,7 @@ No native binaries, no Java, no Node: the goal is `pip install` and sign.
 
 ## Status
 
-Pre-alpha: there is no code to install yet, and this README is the plan. The first milestone is a document signed by uakep and accepted by the tax service's fiscal server in its test mode (see [Roadmap](#roadmap)).
+Pre-alpha: milestone 0.1 is in progress and nothing is on PyPI yet. The cryptographic core works (ДСТУ 4145, ГОСТ 34.311, ГОСТ 28147); key files, certificates and CAdES signed data come next. The goal is a document signed by uakep and accepted by the tax service's fiscal server in its test mode, the 0.2 gate (see [Roadmap](#roadmap)).
 
 ## Why it exists
 
@@ -38,7 +38,7 @@ The first release does what the fiscal server needs and nothing more. The server
 
 Not in the first release: encryption (EnvelopedData), XAdES, PAdES and ASiC, cloud signatures such as Дія.Підпис, hardware tokens, certificate lookup over CMP, OCSP and CRL checks, and a ПРРО client (receipt XML, shifts, offline mode).
 
-## Planned API
+## API
 
 A sketch of the intended use; names and arguments may change before 0.1.
 
@@ -63,14 +63,13 @@ Every layer is checked against ground truth that uakep did not produce, from the
 | Check | What it proves | Ground truth |
 | --- | --- | --- |
 | Standard test vectors | Field and curve arithmetic, ДСТУ 4145 signatures, ГОСТ 34.311 and Купина hashes, ГОСТ 28147 match the standards | Worked examples in each standard |
-| jkurwa's test data | Key files decrypt to the right keys; real certificates parse; real CAdES-C, -T and -X signatures verify | [jkurwa test/data](https://github.com/dstucrypt/jkurwa/tree/master/test/data): key stores, certificates, .p7s files |
+| Official test data | Real certificates parse; real CAdES-BES, -T, -C and -X signatures verify; key files decrypt to the right keys | [ЦЗО test examples](https://czo.gov.ua/testexamples), CA certificates, key files with known passwords |
 | The tax service's signed samples | A signed receipt, Z-report and command, as the fiscal server sees them, verify and unwrap | «Приклади з КЕП» published with the [API description](https://github.com/VSydorenko/prro_docs) |
-| Differential tests | Every signature uakep makes verifies in jkurwa, and every jkurwa signature verifies in uakep, over thousands of random keys and documents | jkurwa, run in CI |
 | Fuzzing | Malformed key files, certificates and server answers raise clean errors, never crash or hang | Property-based and fuzz tests |
 | Fiscal server, test mode | A whole shift (open, sale, Z-report, close) is accepted with a real key; test documents carry no tax effect | `<TESTING>true</TESTING>` documents on the live server |
 | Real use | Keys from many CAs and real receipts, every day | Production users |
 
-The first five run on every commit. The test-mode shift runs before each release, with a maintainer's own key.
+The first four run on every commit. The test-mode shift runs before each release, with a maintainer's own key. CI also cross-checks signatures with jkurwa over thousands of random keys and documents; that keeps the two libraries compatible, but jkurwa is not a source of truth.
 
 ## Roadmap
 
@@ -81,7 +80,7 @@ flowchart LR
     p3["<b>0.3 · More key files</b><br/>Keys from more CAs<br/>Fuzzed parsers"]
     p4["<b>1.0 · Stable</b><br/>API frozen<br/>In daily use"]
     done(["1.0 released"])
-    p1 -- "tax samples verify<br/>and jkurwa agrees" --> p2
+    p1 -- "tax and ЦЗО samples<br/>verify in uakep" --> p2
     p2 -- "a test shift accepted<br/>with a real key" --> p3
     p3 -- "keys from several CAs<br/>load and sign" --> p4
     p4 -- "real receipts<br/>signed every day" --> done

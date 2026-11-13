@@ -1,4 +1,7 @@
-"""Shared fixtures: test data paths and the reference implementation (interop/)."""
+"""Shared fixtures: test data paths and the JavaScript peer in interop/.
+
+The peer is a compatibility check, not a source of truth.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +22,7 @@ def data_file(*parts: str) -> bytes:
     return DATA.joinpath(*parts).read_bytes()
 
 
-class ReferenceHarness:
+class PeerHarness:
     """A running ``node interop/harness.mjs``; one JSON request and answer per line."""
 
     def __init__(self) -> None:
@@ -38,10 +41,10 @@ class ReferenceHarness:
         self._proc.stdin.flush()
         line = self._proc.stdout.readline()
         if not line:
-            raise RuntimeError("reference harness exited")
+            raise RuntimeError("peer harness exited")
         answer = json.loads(line)
         if "error" in answer:
-            raise RuntimeError(f"reference harness: {answer['error']}")
+            raise RuntimeError(f"peer harness: {answer['error']}")
         return answer
 
     def close(self) -> None:
@@ -56,17 +59,17 @@ def _node_packages_installed() -> bool:
 
 
 @pytest.fixture(scope="session")
-def reference():
+def peer():
     reason = None
     if shutil.which("node") is None:
         reason = "node is not installed"
     elif not _node_packages_installed():
-        reason = "the reference implementation is not installed: run `npm ci --prefix interop`"
+        reason = "the JavaScript peer is not installed: run `npm ci --prefix interop`"
     if reason:
         if os.environ.get("UAKEP_REQUIRE_INTEROP"):
             pytest.fail(reason)
         pytest.skip(reason)
-    harness = ReferenceHarness()
+    harness = PeerHarness()
     yield harness
     harness.close()
 

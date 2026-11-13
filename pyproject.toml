@@ -1,6 +1,6 @@
 [project]
 name = "uakep"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Ukrainian qualified electronic signatures (КЕП, ДСТУ 4145-2002) in pure Python"
 readme = "README.md"
 license = "MIT"
@@ -36,11 +36,15 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
 # Ukrainian text in docstrings and messages is intentional.
 ignore = ["RUF001", "RUF002", "RUF003"]
 
+[tool.ruff.lint.per-file-ignores]
+# asn1crypto declares structures as class-level lists.
+"src/uakep/asn1.py" = ["RUF012"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
 markers = [
-    "interop: cross-checks against the reference implementation in interop/",
+    "interop: compatibility cross-checks with the JavaScript peer in interop/",
     "slow: long-running randomized tests",
 ]
 
