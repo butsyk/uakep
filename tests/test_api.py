@@ -1,11 +1,32 @@
-"""The public API: load a key, sign, unwrap."""
+"""The public API: load a key, sign (with or without a time-stamp), unwrap."""
+
+import asyncio
 
 import pytest
 
 import uakep
-from uakep import SignatureError, load_key, sign, unwrap
+from uakep import SignatureError, load_key, sign, sign_async, unwrap
+from uakep.curve import DSTU_PB_257
+from uakep.dstu4145 import PrivateKey
 
-from .conftest import certificate_for, data_file
+from .conftest import LocalTsa, certificate_for, data_file
+
+
+def test_online_document_with_a_signature_timestamp():
+    signer = PrivateKey(DSTU_PB_257, 0x5EED)
+    key = uakep.SigningKey(signer, certificate_for(signer))
+    tsa = LocalTsa(PrivateKey(DSTU_PB_257, 0x75A))
+    signed = sign(b"<CHECK/>", key, timestamp=tsa)
+    assert unwrap(signed) == b"<CHECK/>"
+    assert uakep.verify(signed).timestamp.certificate == tsa.certificate
+
+    async def post(url, request):
+        return tsa(url, request)
+
+    signed = asyncio.run(sign_async(b"<ZREP/>", key, timestamp=post))
+    assert isinstance(uakep.verify(signed).timestamp, uakep.TimeStamp)
+    with pytest.raises(uakep.TimeStampError):
+        sign(b"<CHECK/>", key, timestamp=lambda *_: b"")
 
 
 def test_sign_and_unwrap_with_a_key6_file(tmp_path):

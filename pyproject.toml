@@ -19,6 +19,7 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/butsyk/uakep"
+Changelog = "https://github.com/butsyk/uakep/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]

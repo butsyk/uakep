@@ -4,22 +4,27 @@ The layout follows the tax service's signed samples («Приклади з КЕ�
 the signer's certificate inside, the data attached, the signer named by its key identifier
 as [0] EXPLICIT OCTET STRING, and three signed attributes in this order: messageDigest,
 contentType, signingCertificateV2. Hash and signature algorithms carry no parameters.
+
+Online documents also carry a signature time-stamp (RFC 3161) in the unsigned attributes: a
+token over the hash of the signature value, in the signature's digest family. uakep makes no
+network calls; the caller passes the function that posts the request to the TSA.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 
 from asn1crypto import core, x509
 
-from . import asn1
+from . import asn1, tsp
 from .asn1 import UnsupportedError
 from .certificate import Certificate
 from .dstu4145 import PrivateKey
 from .gost34311 import gost34311
 from .kupyna import kupyna
+from .tsp import TimeStamp, TimeStampError
 
 KUPYNA_256 = "1.2.804.2.1.1.1.1.2.2.1"
 _DIGESTS: dict[str, Callable[[bytes], bytes]] = {
@@ -30,9 +35,17 @@ _DIGESTS: dict[str, Callable[[bytes], bytes]] = {
 }
 _SIGNATURE_ALGORITHMS = {asn1.DSTU4145_LE, asn1.DSTU4145_KUPYNA}
 
+Post = Callable[[str, bytes], bytes]
+"""``post(url, request) -> response``: POST the request to the TSA, return the response body."""
+AsyncPost = Callable[[str, bytes], Awaitable[bytes]]
+
 
 class SignatureError(ValueError):
     """Signed data that does not verify, or is not signed data uakep can check."""
+
+
+class _SignerNotFound(SignatureError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -55,6 +68,7 @@ class Verified:
     certificate: Certificate
     digest_algorithm: str
     signing_time: datetime | None
+    timestamp: TimeStamp | None = None
 
 
 def _digest_for(certificate: Certificate) -> tuple[str, str]:
@@ -121,53 +135,94 @@ def _algorithm(oid: str) -> bytes:
     return _seq(core.ObjectIdentifier(oid).dump())  # no parameters, as in the samples
 
 
+class _Signing:
+    """A signature in the samples' layout, made before its time-stamp is fetched."""
+
+    def __init__(
+        self, content: bytes, certificate: Certificate, sign_digest: Callable[[bytes], bytes]
+    ) -> None:
+        if certificate.subject_key_identifier is None:
+            raise ValueError("the certificate has no subjectKeyIdentifier to name the signer")
+        self.content = content
+        self.certificate = certificate
+        self.digest_oid, self.signature_oid = _digest_for(certificate)
+        self.attrs = signed_attributes(content, certificate)
+        self.signature = sign_digest(_DIGESTS[self.digest_oid](self.attrs))
+
+    def timestamp_request(self) -> tuple[str, bytes]:
+        """(TSA URL, DER request) for a signature time-stamp from the signer's own TSA."""
+        url = self.certificate.tsp_url
+        if url is None:
+            raise TimeStampError("the signer's certificate names no time-stamping service")
+        return url, tsp.request(self.digest_oid, _DIGESTS[self.digest_oid](self.signature))
+
+    def signed_data(self, timestamp_response: bytes | None = None) -> bytes:
+        """ContentInfo(SignedData), with the TSA's token if its response is given."""
+        if timestamp_response is None:
+            return self._assemble(b"")
+        token = tsp.token_from_response(timestamp_response)
+        check_timestamp(token, self.signature)
+        return self._assemble(_der(0xA1, timestamp_attribute(token)))
+
+    def _assemble(self, unsigned_attrs: bytes) -> bytes:
+        """Built field by field so that the order and tagging match the tax samples exactly."""
+        sid = _der(0xA0, core.OctetString(self.certificate.subject_key_identifier).dump())
+        signer_info = _seq(
+            core.Integer(1).dump(),
+            sid,
+            _algorithm(self.digest_oid),
+            b"\xa0" + self.attrs[1:],  # [0] IMPLICIT SET OF Attribute
+            _algorithm(self.signature_oid),
+            core.OctetString(self.signature).dump(),
+            unsigned_attrs,  # [1] IMPLICIT SET OF Attribute, or nothing
+        )
+        signed_data = _seq(
+            core.Integer(1).dump(),
+            _der(0x31, _algorithm(self.digest_oid)),
+            _seq(
+                core.ObjectIdentifier(asn1.ID_DATA).dump(),
+                _der(0xA0, core.OctetString(self.content).dump()),
+            ),
+            _der(0xA0, self.certificate.der),
+            _der(0x31, signer_info),
+        )
+        return _seq(core.ObjectIdentifier(asn1.ID_SIGNED_DATA).dump(), _der(0xA0, signed_data))
+
+
+def timestamp_attribute(token: bytes) -> bytes:
+    """The signature-time-stamp Attribute holding ``token``, as DER."""
+    return _seq(core.ObjectIdentifier(asn1.ID_SIGNATURE_TIMESTAMP).dump(), _der(0x31, token))
+
+
 def build_signed_data(
     content: bytes, certificate: Certificate, sign_digest: Callable[[bytes], bytes]
 ) -> bytes:
-    """ContentInfo(SignedData) over ``content``; ``sign_digest`` maps a hash to ``r || s``.
+    """ContentInfo(SignedData) over ``content``; ``sign_digest`` maps a hash to ``r || s``."""
+    return _Signing(content, certificate, sign_digest).signed_data()
 
-    Built field by field so that the order and tagging match the tax samples exactly.
+
+def sign(content: bytes, key: SigningKey, *, timestamp: Post | None = None) -> bytes:
+    """Sign ``content`` (attached) as CAdES.
+
+    Online documents need a signature time-stamp: pass ``timestamp``, a function that POSTs a
+    request to a TSA with Content-Type ``application/timestamp-query`` and returns the response
+    body. It is called once, with the URL of the TSA named in the signer's certificate.
+    Offline documents go without one.
     """
-    if certificate.subject_key_identifier is None:
-        raise ValueError("the certificate has no subjectKeyIdentifier to name the signer")
-    sid = _der(0xA0, core.OctetString(certificate.subject_key_identifier).dump())
-    attrs = signed_attributes(content, certificate)
-    return _assemble(content, certificate, attrs, sid, sign_digest)
+    signing = _Signing(bytes(content), key.certificate, key.private_key.sign)
+    if timestamp is None:
+        return signing.signed_data()
+    return signing.signed_data(timestamp(*signing.timestamp_request()))
 
 
-def _assemble(
-    content: bytes,
-    certificate: Certificate,
-    attrs: bytes | None,
-    sid: bytes,
-    sign_digest: Callable[[bytes], bytes],
+async def sign_async(
+    content: bytes, key: SigningKey, *, timestamp: AsyncPost | None = None
 ) -> bytes:
-    digest_oid, signature_oid = _digest_for(certificate)
-    signature = sign_digest(_DIGESTS[digest_oid](content if attrs is None else attrs))
-    signer_info = _seq(
-        core.Integer(1).dump(),
-        sid,
-        _algorithm(digest_oid),
-        b"" if attrs is None else b"\xa0" + attrs[1:],  # [0] IMPLICIT SET OF Attribute
-        _algorithm(signature_oid),
-        core.OctetString(signature).dump(),
-    )
-    signed_data = _seq(
-        core.Integer(1).dump(),
-        _der(0x31, _algorithm(digest_oid)),
-        _seq(
-            core.ObjectIdentifier(asn1.ID_DATA).dump(),
-            _der(0xA0, core.OctetString(content).dump()),
-        ),
-        _der(0xA0, certificate.der),
-        _der(0x31, signer_info),
-    )
-    return _seq(core.ObjectIdentifier(asn1.ID_SIGNED_DATA).dump(), _der(0xA0, signed_data))
-
-
-def sign(content: bytes, key: SigningKey) -> bytes:
-    """Sign ``content`` (attached) as CAdES; no time-stamp."""
-    return build_signed_data(bytes(content), key.certificate, key.private_key.sign)
+    """``sign`` for async callers: ``timestamp`` is awaited. Signing itself runs inline."""
+    signing = _Signing(bytes(content), key.certificate, key.private_key.sign)
+    if timestamp is None:
+        return signing.signed_data()
+    return signing.signed_data(await timestamp(*signing.timestamp_request()))
 
 
 def _signer_identifier(sid: core.Any) -> tuple[str, object]:
@@ -199,15 +254,20 @@ def _find_signer(signed_data: asn1.SignedData, signer_info: asn1.SignerInfo) -> 
             return cert
         if kind == "issuer_serial" and (cert.issuer_der, cert.serial_number) == value:
             return cert
-    raise SignatureError("the signer's certificate is not in the signed data")
+    raise _SignerNotFound("the signer's certificate is not in the signed data")
 
 
 def verify(signed: bytes, *, detached_content: bytes | None = None) -> Verified:
     """Check a CAdES signature made with ДСТУ 4145; raise SignatureError if it fails.
 
-    Only the signature and its signed attributes are checked: certificate chains, revocation
-    and time-stamps are not.
+    A signature time-stamp is checked too. It is reported in ``timestamp`` when its token
+    carries the TSA's certificate; without that certificate the token cannot be checked, and
+    ``timestamp`` is None. Certificate chains and revocation are not checked.
     """
+    return _verify(signed, detached_content, timestamps=True)
+
+
+def _verify(signed: bytes, detached_content: bytes | None, *, timestamps: bool) -> Verified:
     try:
         info = asn1.ContentInfo.load(bytes(signed))
         if info["content_type"].dotted != asn1.ID_SIGNED_DATA:
@@ -226,6 +286,12 @@ def verify(signed: bytes, *, detached_content: bytes | None = None) -> Verified:
         found = {a["type"].dotted: a["values"] for a in attrs}
         signed_attrs_der = None if isinstance(attrs, core.Void) else attrs.dump()
         signature = signer_info["signature"].native
+        tokens = [
+            value.dump()
+            for attr in signer_info["unsigned_attrs"]
+            if attr["type"].dotted == asn1.ID_SIGNATURE_TIMESTAMP
+            for value in attr["values"]
+        ]
     except SignatureError:
         raise
     except (ValueError, TypeError, KeyError) as exc:
@@ -252,7 +318,65 @@ def verify(signed: bytes, *, detached_content: bytes | None = None) -> Verified:
 
     if not certificate.public_key.verify(digest(message), signature):
         raise SignatureError("the signature does not match")
-    return Verified(content, certificate, digest_oid, signing_time)
+    stamp = _signature_timestamp(tokens, signature) if timestamps else None
+    return Verified(content, certificate, digest_oid, signing_time, stamp)
+
+
+def _signature_timestamp(tokens: list[bytes], signature: bytes) -> TimeStamp | None:
+    """The earliest signature time-stamp that can be checked; any that fails is an error."""
+    stamps = []
+    for token in tokens:
+        try:
+            stamp = check_timestamp(token, signature, require_certificate=False)
+        except TimeStampError as exc:
+            raise SignatureError(f"the signature time-stamp does not check out: {exc}") from exc
+        if stamp is not None:
+            stamps.append(stamp)
+    return min(stamps, key=lambda stamp: stamp.time, default=None)
+
+
+def check_timestamp(
+    token: bytes, data: bytes, *, require_certificate: bool = True
+) -> TimeStamp | None:
+    """Check an RFC 3161 token over ``data``; raise TimeStampError if it does not hold.
+
+    The token's imprint must be the hash of ``data``, and the token must be signed by a TSA
+    whose certificate is attached, is meant for time-stamping and was valid at the stamped
+    time. With ``require_certificate=False``, a token without its TSA's certificate returns
+    None once its imprint is checked.
+    """
+    try:
+        info = asn1.ContentInfo.load(bytes(token))
+        if info["content_type"].dotted != asn1.ID_SIGNED_DATA:
+            raise TimeStampError("the token is not signed data")
+        econtent = info["content"]["encap_content_info"]
+        content_type = econtent["content_type"].dotted
+        tst_der = econtent["content"].native
+    except TimeStampError:
+        raise
+    except (ValueError, TypeError, KeyError) as exc:
+        raise TimeStampError(f"cannot read the token: {exc}") from exc
+    if content_type != asn1.ID_TST_INFO or tst_der is None:
+        raise TimeStampError("the token holds no TSTInfo")
+    tst = tsp.read_tst_info(tst_der)
+    digest = _DIGESTS.get(tst.digest_algorithm)
+    if digest is None:
+        raise UnsupportedError(f"time-stamp digest algorithm {tst.digest_algorithm}")
+    if tst.imprint != digest(bytes(data)):
+        raise TimeStampError("the time-stamp is for other data")
+    try:
+        tsa = _verify(token, None, timestamps=False).certificate
+    except _SignerNotFound as exc:
+        if require_certificate:
+            raise TimeStampError("the TSA's certificate is not in the token") from exc
+        return None
+    except SignatureError as exc:
+        raise TimeStampError(f"the TSA's signature: {exc}") from exc
+    if tsp.ID_KP_TIME_STAMPING not in tsa.extended_key_usage:
+        raise TimeStampError("the token's signer is not a time-stamping authority")
+    if not tsa.is_valid_at(tst.time):
+        raise TimeStampError("the TSA's certificate was not valid at the stamped time")
+    return TimeStamp(tst.time, tst.serial_number, tst.policy, tst.digest_algorithm, tsa)
 
 
 def _check_attributes(found, content, content_type, certificate, digest) -> None:

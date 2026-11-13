@@ -10,7 +10,7 @@ No native binaries, no Java, no Node: the goal is `pip install` and sign.
 
 ## Status
 
-Pre-alpha: milestone 0.1 is in progress and nothing is on PyPI yet. The cryptographic core works (ДСТУ 4145, ГОСТ 34.311, ГОСТ 28147); key files, certificates and CAdES signed data come next. The goal is a document signed by uakep and accepted by the tax service's fiscal server in its test mode, the 0.2 gate (see [Roadmap](#roadmap)).
+Pre-alpha. Milestone 0.1 is code-complete: uakep reads key files and certificates, and the tax service's samples and ЦЗО's examples verify in it. Milestone 0.2 is in progress: signature time-stamps are built and checked against the samples. Next is a document signed by uakep and accepted by the tax service's fiscal server in its test mode, the 0.2 gate (see the [roadmap](https://github.com/butsyk/uakep/blob/main/ROADMAP.md)).
 
 ## Why it exists
 
@@ -40,7 +40,7 @@ Not in the first release: encryption (EnvelopedData), XAdES, PAdES and ASiC, clo
 
 ## API
 
-A sketch of the intended use; names and arguments may change before 0.1.
+A sketch of the intended use; names and arguments may change before 1.0.
 
 ```python
 from uakep import load_key, sign, unwrap
@@ -48,9 +48,12 @@ from uakep import load_key, sign, unwrap
 # Key-6.dat holds no certificate, so pass the .cer file; .jks and .pfx carry their own
 key = load_key("Key-6.dat", password="…", certificate="signer.cer")
 
-# CAdES-E-T: document attached, signer's certificate inside,
-# signature time-stamp from the server named in that certificate
-signed = sign(receipt_xml, key, timestamp=True)
+# CAdES-E-T: document attached, signer's certificate inside, and a signature
+# time-stamp from the server named in that certificate. uakep makes no network
+# calls: your post(url, request) sends the request and returns the answer.
+signed = sign(receipt_xml, key, timestamp=post)
+# async code: signed = await sign_async(receipt_xml, key, timestamp=async_post)
+# offline documents: sign(receipt_xml, key), without a time-stamp
 
 # POST `signed` to https://fs.tax.gov.ua:8643/fs/doc as application/octet-stream
 ticket_xml = unwrap(response_body)  # checks the fiscal server's signature
@@ -69,25 +72,6 @@ Every layer is checked against ground truth that uakep did not produce, from the
 | Fiscal server, test mode | A whole shift (open, sale, Z-report, close) is accepted with a real key; test documents carry no tax effect | `<TESTING>true</TESTING>` documents on the live server |
 | Real use | Keys from many CAs and real receipts, every day | Production users |
 
-The first four run on every commit. The test-mode shift runs before each release, with a maintainer's own key. CI also cross-checks signatures with jkurwa over thousands of random keys and documents; that keeps the two libraries compatible, but jkurwa is not a source of truth.
-
-## Roadmap
-
-```mermaid
-flowchart LR
-    p1["<b>0.1 · First signature</b><br/>Key files, ДСТУ 4145<br/>CAdES signed data<br/>Certificates read"]
-    p2["<b>0.2 · Server accepts it</b><br/>Signature time-stamps<br/>Signed answers unwrapped, verified"]
-    p3["<b>0.3 · More key files</b><br/>Keys from more CAs<br/>Fuzzed parsers"]
-    p4["<b>1.0 · Stable</b><br/>API frozen<br/>In daily use"]
-    done(["1.0 released"])
-    p1 -- "tax and ЦЗО samples<br/>verify in uakep" --> p2
-    p2 -- "a test shift accepted<br/>with a real key" --> p3
-    p3 -- "keys from several CAs<br/>load and sign" --> p4
-    p4 -- "real receipts<br/>signed every day" --> done
-```
-
-Each arrow is the gate that ends a phase. 1.0 waits for real receipts, because tests cannot cover every CA's key files.
-
 ## Security and legal notes
 
 - **Keys stay with the caller.** uakep never writes a key or password to disk or logs, and never sends either over the network.
@@ -99,5 +83,4 @@ Each arrow is the gate that ends a phase. 1.0 waits for real receipts, because t
 
 - **Credits.** The cryptography is ported from [jkurwa](https://github.com/dstucrypt/jkurwa) by Ilya Petrov. [ppolib](https://github.com/leon-mbs/ppolib) by leon-mbs is a second reference. The protocol notes come from the tax service's [published description](https://tax.gov.ua/baneryi/programni-rro/opis-ari-fiskalnogo-servera/opis-ari--kontrolyuyuchogo-organu/), mirrored as Markdown in [VSydorenko/prro_docs](https://github.com/VSydorenko/prro_docs).
 - **License.** MIT for uakep's own code. Ported parts keep jkurwa's copyright notice and BSD terms, collected in NOTICE.
-- **Open question.** jkurwa's repository has no LICENSE file, only "BSD" in its package.json; before 0.1 we ask its author which BSD text applies.
 - **Contributing.** The most useful help is test data: a document signed with a key from a CA not yet covered, or one the fiscal server rejected, with its error. Never send a private key or its password. A signed document carries your certificate, so share only what you are fine making public.

@@ -30,6 +30,10 @@ def test_signatures_cross_verify(peer, interop_rounds):
         curve = rng.choice(CURVES)
         key = PrivateKey(curve, rng.randrange(1, curve.order))
         digest = rng.randbytes(rng.choice([32, 32, 32, 1, 20, 48, 64]))
+        if int.from_bytes(digest, "little") & curve.field.mask == 0:
+            # ДСТУ 4145-2002 signs such a hash as h = 1 (test_digest_to_field); the peer
+            # refuses to sign it, so it is no common ground. One 1-byte hash in 256 hits this.
+            continue
         where = f"seed={SEED} round={i} curve={curve.name} d={key.d:x} hash={digest.hex()}"
         common = {"curve": curve.name, "hash": digest.hex()}
 
