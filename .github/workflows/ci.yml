@@ -28,13 +28,7 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-      - run: npm ci --prefix interop
       - run: uv run pytest --cov --cov-report=term-missing
-        env:
-          UAKEP_REQUIRE_INTEROP: "1"
 
   interop:
     # Thousands of random keys and documents, signed by each library and checked by the other.
@@ -50,5 +44,4 @@ jobs:
       - run: npm ci --prefix interop
       - run: uv run pytest -m interop -q
         env:
-          UAKEP_REQUIRE_INTEROP: "1"
           UAKEP_INTEROP_ROUNDS: "2000"

@@ -24,6 +24,6 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.3
       - name: The tag names the package's version
         run: test "${GITHUB_REF_NAME}" = "v$(uv version --short)"
-      - run: uv run pytest -q -m "not interop"
+      - run: uv run pytest -q
       - run: uv build
       - run: uv publish --trusted-publishing always

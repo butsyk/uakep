@@ -61,15 +61,10 @@ def _node_packages_installed() -> bool:
 
 @pytest.fixture(scope="session")
 def peer():
-    reason = None
     if shutil.which("node") is None:
-        reason = "node is not installed"
-    elif not _node_packages_installed():
-        reason = "the JavaScript peer is not installed: run `npm ci --prefix interop`"
-    if reason:
-        if os.environ.get("UAKEP_REQUIRE_INTEROP"):
-            pytest.fail(reason)
-        pytest.skip(reason)
+        pytest.fail("node is not installed")
+    if not _node_packages_installed():
+        pytest.fail("the JavaScript peer is not installed: run `npm ci --prefix interop`")
     harness = PeerHarness()
     yield harness
     harness.close()

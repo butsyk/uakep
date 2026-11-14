@@ -10,7 +10,7 @@ No native binaries, no Java, no Node: the goal is `pip install` and sign.
 
 ## Status
 
-Pre-alpha. Milestone 0.1 is code-complete: uakep reads key files and certificates, and the tax service's samples and ЦЗО's examples verify in it. Milestone 0.2 is in progress: signature time-stamps are built and checked against the samples. Next is a document signed by uakep and accepted by the tax service's fiscal server in its test mode, the 0.2 gate (see the [roadmap](https://github.com/butsyk/uakep/blob/main/ROADMAP.md)).
+Pre-alpha. Milestone 0.1 is done and released as uakep 0.1.0 on PyPI: uakep reads key files and certificates, and the tax service's samples and ЦЗО's examples verify in it. Milestone 0.2 is in progress: signature time-stamps are built, checked against the samples and released in 0.1.0. Still to come are a check that an answer was signed by the fiscal server, and the 0.2 gate: a test shift signed by uakep with a real key and accepted by the fiscal server in its test mode (see the [roadmap](https://github.com/butsyk/uakep/blob/main/ROADMAP.md)).
 
 ## Why it exists
 

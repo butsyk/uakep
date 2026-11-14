@@ -43,7 +43,9 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+# The interop tests need Node, so a plain run leaves them out.
+# To run them: npm ci --prefix interop, then pytest -m interop.
+addopts = "-ra -m 'not interop'"
 markers = [
     "interop: compatibility cross-checks with the JavaScript peer in interop/",
     "slow: long-running randomized tests",
