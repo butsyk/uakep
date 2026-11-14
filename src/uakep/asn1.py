@@ -26,6 +26,9 @@ IIT_STORE = "1.3.6.1.4.1.19398.1.1.1.2"
 IIT_KEY_CURVE = "1.3.6.1.4.1.19398.1.1.2.2"
 IIT_KEY_BITS = "1.3.6.1.4.1.19398.1.1.2.3"
 
+# Field degrees ДСТУ 4145-2002 allows for a curve spelled out in a certificate or key file.
+MIN_FIELD_DEGREE, MAX_FIELD_DEGREE = 163, 509
+
 # Named curves: the ten curves of ДСТУ 4145-2002 under the ГОСТ 34.311 and Купина arcs.
 _CURVE_SIZES = (163, 167, 173, 179, 191, 233, 257, 307, 367, 431)
 CURVE_OIDS: dict[str, str] = {}
@@ -392,8 +395,12 @@ def curve_from_spec(spec: CurveSpec, *, little_endian: bool = True) -> Curve:
         p = poly.chosen
         ks = (p["k"].native, p["j"].native, p["l"].native)
     order = "little" if little_endian else "big"
+    m = ec["field"]["m"].native
+    if not MIN_FIELD_DEGREE <= m <= MAX_FIELD_DEGREE:
+        # Checked before any arithmetic: its cost grows with m, and m comes from the file.
+        raise ValueError(f"field degree {m} is outside ДСТУ 4145's range")
     curve = Curve.from_params(
-        ec["field"]["m"].native,
+        m,
         ks,
         ec["a"].native,
         int.from_bytes(ec["b"].native, order),

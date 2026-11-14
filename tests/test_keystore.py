@@ -231,6 +231,33 @@ def test_explicit_curve_spec_round_trip():
     assert custom.name is None and custom != DSTU_PB_431
 
 
+@pytest.mark.parametrize(
+    ("m", "error"),
+    [
+        (162, "field degree 162 is outside"),
+        (510, "field degree 510 is outside"),
+        (-257, "field degree -257 is outside"),
+        (1 << 64, "is outside"),  # 1 << m alone would ask for more memory than there is
+        (163, "not irreducible"),  # the smallest and largest degrees pass the range check
+        (509, "not irreducible"),
+    ],
+)
+def test_explicit_curve_field_degree_is_bounded(m, error):
+    c = DSTU_PB_257
+    spec = asn1.CurveSpec(
+        name="explicit",
+        value={
+            "field": {"m": m, "poly": asn1.Polynomial(name="trinomial", value=1)},
+            "a": c.a,
+            "b": c.b.to_bytes(33, "little"),
+            "n": c.order,
+            "bp": c.compress(c.base).to_bytes(33, "little"),
+        },
+    )
+    with pytest.raises(ValueError, match=error):
+        asn1.curve_from_spec(asn1.CurveSpec.load(spec.dump()))
+
+
 def test_private_key_from_attribute_reads_reversed_bits(key6_keys):
     # The second key's scalar is stored bit-reversed; check one constructed by hand too.
     d = 0b1011 << 400 | 0b1101

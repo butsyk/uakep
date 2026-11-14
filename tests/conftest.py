@@ -5,9 +5,11 @@ The peer is a compatibility check, not a source of truth.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -117,6 +119,70 @@ def certificate_for(key, template="DSTU_sign.cer"):
     fields = ("tbs_certificate", "signature_algorithm", "signature_value")
     cert = asn1.Certificate({name: cert[name] for name in fields})
     return Certificate(cert.dump())
+
+
+def certificate_with_curve(m, k, a, b, order, base, template="DSTU_sign.cer"):
+    """A ЦЗО test certificate whose key parameters spell out a curve over t^m + t^k + 1.
+
+    ``b`` and ``base`` (the compressed base point) are little-endian bytes, as in certificates.
+    Nothing checks the numbers here: that is the reader's job.
+    """
+    from asn1crypto import core
+
+    from uakep import asn1
+    from uakep.certificate import Certificate
+
+    cert = asn1.Certificate.load(data_file("czo", template))
+    tbs = cert["tbs_certificate"]
+    spki = tbs["subject_public_key_info"]
+    params = asn1.DstuParams(
+        {
+            "curve": asn1.CurveSpec(
+                name="explicit",
+                value={
+                    "field": {"m": m, "poly": asn1.Polynomial(name="trinomial", value=k)},
+                    "a": a,
+                    "b": b,
+                    "n": order,
+                    "bp": base,
+                },
+            )
+        }
+    )
+    tbs["subject_public_key_info"] = asn1.SubjectPublicKeyInfo(
+        {
+            "algorithm": {
+                "algorithm": spki["algorithm"]["algorithm"].dotted,
+                "parameters": core.Any.load(params.dump()),
+            },
+            "public_key": spki["public_key"],
+        }
+    )
+    fields = ("tbs_certificate", "signature_algorithm", "signature_value")
+    return Certificate(asn1.Certificate({name: cert[name] for name in fields}).dump())
+
+
+class TooSlow(BaseException):
+    """Raised by ``time_limit``; a BaseException, so that no ``except Exception`` hides it."""
+
+
+@contextlib.contextmanager
+def time_limit(seconds: float):
+    """Stop the block with TooSlow after ``seconds``; no limit where SIGALRM is missing."""
+    if not hasattr(signal, "SIGALRM"):  # Windows
+        yield
+        return
+
+    def stop(signum, frame):
+        raise TooSlow(f"still running after {seconds} s")
+
+    previous = signal.signal(signal.SIGALRM, stop)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 def sample_tsa_certificate():

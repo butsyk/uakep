@@ -4,6 +4,10 @@ Notable changes to uakep, newest first. The format follows [Keep a Changelog](ht
 
 ## [Unreleased]
 
+### Fixed
+
+- `verify()` no longer hangs on a certificate that spells out a curve over a made-up field. Such a certificate takes no key to make. A curve given by its parameters must now have a field degree from 163 to 509, an irreducible field polynomial, a coefficient `b` inside the field and an order that fits the curve.
+
 ## [0.1.0] - 2026-11-13
 
 The first release.

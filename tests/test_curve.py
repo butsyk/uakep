@@ -18,6 +18,8 @@ from uakep.curve import (
 )
 from uakep.gf2m import BinaryField
 
+from .conftest import time_limit
+
 CURVES = [DSTU_PB_191, DSTU_PB_257, DSTU_PB_431]
 C257 = DSTU_PB_257
 
@@ -218,6 +220,27 @@ def test_rejects_bad_curves():
         Curve(f, a=2, b=C257.b, order=C257.order, base=C257.base)
     with pytest.raises(InvalidPointError):
         Curve(f, a=0, b=C257.b, order=C257.order, base=(C257.base[0], C257.base[1] ^ 1))
+    for b in (0, 1 << 257, -C257.b):
+        with pytest.raises(ValueError, match="coefficient b"):
+            Curve(f, a=0, b=b, order=C257.order, base=C257.base)
+    for order in (1, 1 << 258, -C257.order):
+        with pytest.raises(ValueError, match="order does not fit"):
+            Curve(f, a=0, b=C257.b, order=order, base=C257.base)
+    # the largest b and order that pass: b then fails on the base point, the order is taken
+    with pytest.raises(InvalidPointError):
+        Curve(f, a=0, b=(1 << 257) - 1, order=C257.order, base=C257.base)
+    assert Curve(f, a=0, b=C257.b, order=(1 << 258) - 1, base=C257.base).order.bit_length() == 258
+
+
+def test_from_params_checks_the_numbers_before_using_them():
+    base = C257.compress(C257.base)
+    with pytest.raises(ValueError, match="a = 0 or a = 1"):
+        Curve.from_params(257, [12], 2, C257.b, C257.order, base)
+    # reducing a number this long by the field polynomial would take minutes
+    with pytest.raises(ValueError, match="coefficient b"), time_limit(5):
+        Curve.from_params(257, [12], 0, 1 << 16_000_000, C257.order, base)
+    with pytest.raises(ValueError, match="order does not fit"):
+        Curve.from_params(257, [12], 0, C257.b, 1 << 258, base)
 
 
 def test_is_valid_public_point_rejects_off_curve_and_infinity():

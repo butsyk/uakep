@@ -20,12 +20,15 @@ class BinaryField:
 
     def __init__(self, m: int, ks: tuple[int, ...] | list[int]) -> None:
         ks = tuple(sorted(int(k) for k in ks))
-        if len(ks) not in (1, 3) or not ks[0] > 0 or ks[-1] >= m:
+        if len(ks) not in (1, 3) or len(set(ks)) != len(ks) or not ks[0] > 0 or ks[-1] >= m:
             raise ValueError(f"unsupported field polynomial m={m}, ks={ks}")
         self.m = m
         self.ks = ks
         self.modulus = reduce(lambda acc, k: acc | (1 << k), ks, (1 << m) | 1)
         self.mask = (1 << m) - 1
+        if not self._is_irreducible():
+            # Not a field: some elements have no inverse, and inv() would never return.
+            raise ValueError(f"field polynomial is not irreducible: m={m}, ks={ks}")
         self._trace_mask = self._compute_trace_mask()
 
     def __repr__(self) -> str:
@@ -36,6 +39,18 @@ class BinaryField:
 
     def __hash__(self) -> int:
         return hash(self.modulus)
+
+    def _is_irreducible(self) -> bool:
+        """Rabin's test: t^(2^m) = t modulo the polynomial f, and for every prime q dividing m
+        the polynomial t^(2^(m/q)) + t shares no factor with f."""
+        m = self.m
+        checkpoints = {m // q for q in _prime_factors(m)}
+        x = t = 2
+        for i in range(1, m + 1):
+            x = self.sqr(x)
+            if i in checkpoints and _gcd(self.modulus, x ^ t) != 1:
+                return False
+        return x == t
 
     # -- reduction and products ------------------------------------------------------------
 
@@ -133,6 +148,28 @@ class BinaryField:
     def sqrt(self, a: int) -> int:
         """Square root: a^(2^(m-1))."""
         return self.sqr_n(a, self.m - 1)
+
+
+def _prime_factors(n: int) -> set[int]:
+    factors = set()
+    p = 2
+    while p * p <= n:
+        while n % p == 0:
+            factors.add(p)
+            n //= p
+        p += 1
+    if n > 1:
+        factors.add(n)
+    return factors
+
+
+def _gcd(a: int, b: int) -> int:
+    """Greatest common divisor of two binary polynomials."""
+    while b:
+        while a.bit_length() >= b.bit_length():
+            a ^= b << (a.bit_length() - b.bit_length())
+        a, b = b, a
+    return a
 
 
 def clmul(a: int, b: int) -> int:

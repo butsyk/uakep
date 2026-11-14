@@ -31,8 +31,7 @@ class Curve:
     name: str | None = None
 
     def __post_init__(self) -> None:
-        if self.a not in (0, 1):
-            raise ValueError("ДСТУ 4145 curves have a = 0 or a = 1")
+        _check_parameters(self.field, self.a, self.b, self.order)
         if not self.contains(self.base):
             raise InvalidPointError("base point is not on the curve")
 
@@ -49,6 +48,7 @@ class Curve:
     ) -> Curve:
         """Build a curve from parameters as stored in certificates and key files."""
         f = BinaryField(m, ks)
+        _check_parameters(f, a, b, order)  # before any arithmetic with them
         stub = _CurveMath(f, a, b)
         return cls(f, a, b, order, stub.decompress(base_compressed), name)
 
@@ -122,6 +122,17 @@ class Curve:
     def is_valid_public_point(self, p: Point | None) -> bool:
         """On the curve, not infinity, and of order ``self.order``."""
         return p is not None and self.contains(p) and self.mul(self.order, p) is None
+
+
+def _check_parameters(field: BinaryField, a: int, b: int, order: int) -> None:
+    """Reject numbers that are no curve; they may come from a certificate or key file."""
+    if a not in (0, 1):
+        raise ValueError("ДСТУ 4145 curves have a = 0 or a = 1")
+    if not 0 < b <= field.mask:
+        raise ValueError("the coefficient b is not a non-zero field element")
+    # A subgroup's order divides the curve's, which is below 2^(m+1) by Hasse's bound.
+    if not 1 < order < 2 << field.m:
+        raise ValueError("the base point's order does not fit the curve")
 
 
 @dataclass(frozen=True)

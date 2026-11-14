@@ -4,6 +4,7 @@ Known answers are published vectors for reduction, multiplication, inversion and
 in GF(2^257) and GF(2^191).
 """
 
+import itertools
 import random
 
 import pytest
@@ -158,10 +159,45 @@ def test_half_trace_needs_odd_degree():
         BinaryField(4, (1,)).half_trace(3)
 
 
-@pytest.mark.parametrize("ks", [(), (1, 2), (0,), (257,), (1, 2, 3, 4)])
+@pytest.mark.parametrize("ks", [(), (1, 2), (0,), (257,), (1, 2, 3, 4), (1, 1, 3)])
 def test_rejects_bad_polynomials(ks):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unsupported field polynomial"):
         BinaryField(257, ks)
+
+
+FIELDS_OF_DEGREE_2_TO_13 = 290  # as trial division counts them
+
+
+def _remainder(a: int, b: int) -> int:
+    while a.bit_length() >= b.bit_length():
+        a ^= b << (a.bit_length() - b.bit_length())
+    return a
+
+
+def test_only_irreducible_polynomials_make_a_field():
+    """Every trinomial and pentanomial of degree 2 to 13, against trial division."""
+    fields = 0
+    for m in range(2, 14):
+        for ks in [(k,) for k in range(1, m)] + list(itertools.combinations(range(1, m), 3)):
+            modulus = (1 << m) | sum(1 << k for k in ks) | 1
+            divisors = range(2, 1 << (m // 2 + 1))  # every polynomial of degree 1 to m/2
+            if any(_remainder(modulus, d) == 0 for d in divisors):
+                with pytest.raises(ValueError, match="not irreducible"):
+                    BinaryField(m, ks)
+            else:
+                assert BinaryField(m, ks).modulus == modulus
+                fields += 1
+    assert fields == FIELDS_OF_DEGREE_2_TO_13
+
+
+def test_reducible_polynomials_of_real_size_are_rejected():
+    # t^257 + t + 1 is divisible by t^2 + t + 1; in such a ring inv() used to loop forever.
+    assert _remainder((1 << 257) | 0b11, 0b111) == 0
+    with pytest.raises(ValueError, match="not irreducible"):
+        BinaryField(257, (1,))
+    # t^256 + t^2 + 1 is the square of t^128 + t + 1.
+    with pytest.raises(ValueError, match="not irreducible"):
+        BinaryField(256, (2,))
 
 
 def test_equality_and_repr():
