@@ -10,7 +10,7 @@ No native binaries, no Java, no Node: the goal is `pip install` and sign.
 
 ## Status
 
-Pre-alpha. Milestone 0.1 is done and released as uakep 0.1.0 on PyPI: uakep reads key files and certificates, and the tax service's samples and ЦЗО's examples verify in it. Milestone 0.2 is in progress: signature time-stamps are built, checked against the samples and released in 0.1.0. Still to come are a check that an answer was signed by the fiscal server, and the 0.2 gate: a test shift signed by uakep with a real key and accepted by the fiscal server in its test mode (see the [roadmap](https://github.com/butsyk/uakep/blob/main/ROADMAP.md)).
+Alpha: the API may change before 1.0. uakep reads key files, signs with a time-stamp, and verifies the tax service's samples and ЦЗО's examples. It is not yet proven against the live fiscal server: a test shift signed with a real key is the gate of milestone 0.2 (see the [roadmap](https://github.com/butsyk/uakep/blob/main/ROADMAP.md)). Until then, `unwrap()` checks that an answer is signed, not that the fiscal server signed it.
 
 ## Why it exists
 
@@ -56,7 +56,7 @@ signed = sign(receipt_xml, key, timestamp=post)
 # offline documents: sign(receipt_xml, key), without a time-stamp
 
 # POST `signed` to https://fs.tax.gov.ua:8643/fs/doc as application/octet-stream
-ticket_xml = unwrap(response_body)  # checks the fiscal server's signature
+ticket_xml = unwrap(response_body)  # checks the signature
 ```
 
 ## How correctness is proven

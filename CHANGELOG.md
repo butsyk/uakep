@@ -4,6 +4,8 @@ Notable changes to uakep, newest first. The format follows [Keep a Changelog](ht
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-14
+
 ### Fixed
 
 - `verify()` no longer hangs on a certificate that spells out a curve over a made-up field. Such a certificate takes no key to make. A curve given by its parameters must now have a field degree from 163 to 509, an irreducible field polynomial, a coefficient `b` inside the field and an order that fits the curve.
@@ -24,5 +26,6 @@ The first release.
 
 Not yet proven: a test shift accepted by the fiscal server with a real key, the gate of milestone 0.2.
 
-[Unreleased]: https://github.com/butsyk/uakep/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/butsyk/uakep/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/butsyk/uakep/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/butsyk/uakep/releases/tag/v0.1.0
