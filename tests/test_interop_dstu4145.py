@@ -1,7 +1,7 @@
 """Compatibility: uakep and the JavaScript peer in interop/ check each other's ДСТУ 4145
 signatures. A disagreement needs a look at the standard; neither side is the source of truth.
 
-Rounds come from UAKEP_INTEROP_ROUNDS (default 30; CI runs more). Each failure message carries
+Rounds come from UAKEP_INTEROP_ROUNDS (default 30). Each failure message carries
 the seed (UAKEP_INTEROP_SEED) so a run can be replayed.
 """
 

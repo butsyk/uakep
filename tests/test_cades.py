@@ -18,7 +18,7 @@ from uakep.curve import DSTU_PB_257
 from uakep.dstu4145 import PrivateKey
 from uakep.gost34311 import gost34311
 
-from .conftest import certificate_for, data_file
+from .conftest import certificate_for, certificate_with_curve, data_file, time_limit
 
 TAX = ["receipt.xml.signed", "zreport.xml.signed", "state-request.json.signed"]
 CZO_ENVELOPED = [
@@ -223,6 +223,70 @@ def test_attribute_checks():
     sha256_default = asn1.SigningCertificateV2({"certs": [{"cert_hash": b"\x00" * 32}]})
     with pytest.raises(UnsupportedError, match="signingCertificateV2"):
         verify(DIGEST_ATTR, (asn1.ID_SIGNING_CERTIFICATE_V2, sha256_default))
+
+
+def test_malformed_attribute_values_are_signature_errors():
+    """Attribute values are parsed late; an empty set or a wrong type must not leak out."""
+
+    def empty(oid):
+        return cades._seq(core.ObjectIdentifier(oid).dump(), b"\x31\x00")
+
+    digest = cades._attribute(*DIGEST_ATTR)
+    no_certs = asn1.SigningCertificateV2({"certs": []})
+    for attributes in (
+        empty(asn1.ID_MESSAGE_DIGEST),
+        cades._attribute(asn1.ID_MESSAGE_DIGEST, core.Integer(5)),
+        digest + empty(asn1.ID_CONTENT_TYPE),
+        digest + cades._attribute(asn1.ID_CONTENT_TYPE, core.Integer(5)),
+        digest + empty(asn1.ID_SIGNING_TIME),
+        digest + cades._attribute(asn1.ID_SIGNING_TIME, core.OctetString(b"x")),
+        digest + empty(asn1.ID_SIGNING_CERTIFICATE_V2),
+        digest + cades._attribute(asn1.ID_SIGNING_CERTIFICATE_V2, no_certs),
+        digest + cades._attribute(asn1.ID_SIGNING_CERTIFICATE_V2, core.Integer(5)),
+    ):
+        with pytest.raises(SignatureError, match=r"^cannot read the signed data: "):
+            cades.verify(_signed_data(_signer_info(cades._der(0x31, attributes))))
+
+
+def _forged(certificate: Certificate) -> bytes:
+    """Signed data naming ``certificate``, with a junk signature: it takes no key to make."""
+    return cades.build_signed_data(b"content", certificate, lambda digest: b"\x01" * 64)
+
+
+@pytest.mark.parametrize(
+    ("m", "k", "base", "error"),
+    [
+        # t^257 + t + 1 is divisible by t^2 + t + 1: inverting x^2 for x = t^3 + t^2 + t,
+        # which shares that factor, never returned
+        (257, 1, 0b1110, "not irreducible"),
+        # t^256 + t^2 + 1 = (t^128 + t + 1)^2: x = t^129 + t^2 + t squares to zero there
+        (256, 2, (1 << 129) | 0b110, "not irreducible"),
+        (100_003, 1, 2, "field degree 100003 is outside"),
+        (-257, 12, 2, "field degree -257 is outside"),
+    ],
+)
+def test_a_made_up_curve_in_the_certificate_is_a_signature_error(m, k, base, error):
+    for a in (0, 1):  # one of the two keeps x as given when the point is decompressed
+        certificate = certificate_with_curve(
+            m, k, a, b"\x05", DSTU_PB_257.order, base.to_bytes(33, "little")
+        )
+        with pytest.raises(SignatureError, match=error), time_limit(5):
+            cades.verify(_forged(certificate))
+
+
+def test_oversized_curve_numbers_in_the_certificate_are_signature_errors():
+    c = DSTU_PB_257
+    b = c.b.to_bytes(33, "little")
+    base = c.compress(c.base).to_bytes(33, "little")
+    long_b = certificate_with_curve(257, 12, c.a, b + b"\x01", c.order, base)
+    with pytest.raises(SignatureError, match="coefficient b"):
+        cades.verify(_forged(long_b))
+    # with an order this long, a signature as long would be a scalar of a million bits
+    long_order = certificate_with_curve(257, 12, c.a, b, 1 << 1_000_000, base)
+    with pytest.raises(SignatureError, match="order does not fit"):
+        cades.verify(_forged(long_order))
+    # the same numbers, in range, are the tax samples' TSA curve: read without complaint
+    assert certificate_with_curve(257, 12, c.a, b, c.order, base).public_key.curve is c
 
 
 def test_unsupported_algorithms():

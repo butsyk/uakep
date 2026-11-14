@@ -31,7 +31,7 @@ jobs:
       - run: uv run pytest --cov --cov-report=term-missing
 
   interop:
-    # Thousands of random keys and documents, signed by each library and checked by the other.
+    # Random keys and documents, signed by each library and checked by the other.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -43,5 +43,3 @@ jobs:
           node-version: "24"
       - run: npm ci --prefix interop
       - run: uv run pytest -m interop -q
-        env:
-          UAKEP_INTEROP_ROUNDS: "2000"

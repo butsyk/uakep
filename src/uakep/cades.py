@@ -48,6 +48,10 @@ class _SignerNotFound(SignatureError):
     pass
 
 
+# What malformed bytes can raise while they are read, here or in asn1crypto.
+_MALFORMED = (ValueError, TypeError, KeyError, IndexError)
+
+
 @dataclass(frozen=True)
 class SigningKey:
     """A private key and the certificate issued for it."""
@@ -260,6 +264,9 @@ def _find_signer(signed_data: asn1.SignedData, signer_info: asn1.SignerInfo) -> 
 def verify(signed: bytes, *, detached_content: bytes | None = None) -> Verified:
     """Check a CAdES signature made with ДСТУ 4145; raise SignatureError if it fails.
 
+    Signed data that cannot be read is a SignatureError too, however it is damaged. Only an
+    algorithm uakep does not have raises something else, an UnsupportedError.
+
     A signature time-stamp is checked too. It is reported in ``timestamp`` when its token
     carries the TSA's certificate; without that certificate the token cannot be checked, and
     ``timestamp`` is None. Certificate chains and revocation are not checked.
@@ -268,34 +275,45 @@ def verify(signed: bytes, *, detached_content: bytes | None = None) -> Verified:
 
 
 def _verify(signed: bytes, detached_content: bytes | None, *, timestamps: bool) -> Verified:
+    """Whatever is wrong with ``signed``, the caller sees a SignatureError.
+
+    asn1crypto parses lazily, so malformed bytes can surface at any step: in an attribute's
+    value, in the signer's public key. All of it is caught here, in one place.
+    """
     try:
-        info = asn1.ContentInfo.load(bytes(signed))
-        if info["content_type"].dotted != asn1.ID_SIGNED_DATA:
-            raise SignatureError("not signed data")
-        signed_data = info["content"]
-        if len(signed_data["signer_infos"]) != 1:
-            raise SignatureError("expected exactly one signature")
-        signer_info = signed_data["signer_infos"][0]
-        econtent = signed_data["encap_content_info"]
-        content = econtent["content"].native
-        content_type = econtent["content_type"].dotted
-        certificate = _find_signer(signed_data, signer_info)
-        digest_oid = signer_info["digest_algorithm"]["algorithm"].dotted
-        signature_oid = signer_info["signature_algorithm"]["algorithm"].dotted
-        attrs = signer_info["signed_attrs"]
-        found = {a["type"].dotted: a["values"] for a in attrs}
-        signed_attrs_der = None if isinstance(attrs, core.Void) else attrs.dump()
-        signature = signer_info["signature"].native
-        tokens = [
-            value.dump()
-            for attr in signer_info["unsigned_attrs"]
-            if attr["type"].dotted == asn1.ID_SIGNATURE_TIMESTAMP
-            for value in attr["values"]
-        ]
-    except SignatureError:
+        return _verify_signed_data(signed, detached_content, timestamps=timestamps)
+    except (SignatureError, UnsupportedError):
         raise
-    except (ValueError, TypeError, KeyError) as exc:
+    except _MALFORMED as exc:
         raise SignatureError(f"cannot read the signed data: {exc}") from exc
+
+
+def _verify_signed_data(
+    signed: bytes, detached_content: bytes | None, *, timestamps: bool
+) -> Verified:
+    info = asn1.ContentInfo.load(bytes(signed))
+    if info["content_type"].dotted != asn1.ID_SIGNED_DATA:
+        raise SignatureError("not signed data")
+    signed_data = info["content"]
+    if len(signed_data["signer_infos"]) != 1:
+        raise SignatureError("expected exactly one signature")
+    signer_info = signed_data["signer_infos"][0]
+    econtent = signed_data["encap_content_info"]
+    content = econtent["content"].native
+    content_type = econtent["content_type"].dotted
+    certificate = _find_signer(signed_data, signer_info)
+    digest_oid = signer_info["digest_algorithm"]["algorithm"].dotted
+    signature_oid = signer_info["signature_algorithm"]["algorithm"].dotted
+    attrs = signer_info["signed_attrs"]
+    found = {a["type"].dotted: a["values"] for a in attrs}
+    signed_attrs_der = None if isinstance(attrs, core.Void) else attrs.dump()
+    signature = signer_info["signature"].native
+    tokens = [
+        value.dump()
+        for attr in signer_info["unsigned_attrs"]
+        if attr["type"].dotted == asn1.ID_SIGNATURE_TIMESTAMP
+        for value in attr["values"]
+    ]
 
     if content is None:
         if detached_content is None:
@@ -346,16 +364,20 @@ def check_timestamp(
     None once its imprint is checked.
     """
     try:
-        info = asn1.ContentInfo.load(bytes(token))
-        if info["content_type"].dotted != asn1.ID_SIGNED_DATA:
-            raise TimeStampError("the token is not signed data")
-        econtent = info["content"]["encap_content_info"]
-        content_type = econtent["content_type"].dotted
-        tst_der = econtent["content"].native
-    except TimeStampError:
+        return _check_timestamp(token, data, require_certificate=require_certificate)
+    except (TimeStampError, UnsupportedError):
         raise
-    except (ValueError, TypeError, KeyError) as exc:
+    except _MALFORMED as exc:
         raise TimeStampError(f"cannot read the token: {exc}") from exc
+
+
+def _check_timestamp(token: bytes, data: bytes, *, require_certificate: bool) -> TimeStamp | None:
+    info = asn1.ContentInfo.load(bytes(token))
+    if info["content_type"].dotted != asn1.ID_SIGNED_DATA:
+        raise TimeStampError("the token is not signed data")
+    econtent = info["content"]["encap_content_info"]
+    content_type = econtent["content_type"].dotted
+    tst_der = econtent["content"].native
     if content_type != asn1.ID_TST_INFO or tst_der is None:
         raise TimeStampError("the token holds no TSTInfo")
     tst = tsp.read_tst_info(tst_der)

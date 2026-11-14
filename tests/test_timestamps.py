@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 import pytest
 from asn1crypto import core, x509
+from asn1crypto import tsp as tsp_asn1
 
 from uakep import asn1, cades, tsp
 from uakep.asn1 import UnsupportedError
@@ -265,6 +266,39 @@ def test_token_failures():
     ):
         with pytest.raises(TimeStampError, match="not valid at the stamped time"):
             check(tsa.token(tst_info(asn1.GOST34311, gost34311(data), when=when)))
+
+
+def test_malformed_tokens_are_timestamp_errors():
+    """What a token holds is parsed late too; it must surface as a TimeStampError."""
+    tsa = LocalTsa(TSA_KEY)
+    signature = SIGNING.signature
+    imprint = gost34311(signature)
+
+    # genTime without a time zone cannot be compared with the certificate's validity
+    local_time = tsp_asn1.TSTInfo(
+        {
+            "version": "v1",
+            "policy": TEST_TSA_POLICY,
+            "message_imprint": {
+                "hash_algorithm": {"algorithm": asn1.GOST34311},
+                "hashed_message": imprint,
+            },
+            "serial_number": 1,
+            "gen_time": core.GeneralizedTime.load(b"\x18\x0e20200721073728"),
+        }
+    ).dump()
+    with pytest.raises(TimeStampError, match=r"^cannot read the token: can't compare"):
+        cades.check_timestamp(tsa.token(local_time), signature)
+
+    # a messageDigest attribute holding an INTEGER where the hash should be
+    good = tsa.stamp(asn1.GOST34311, signature)
+    digest_value = core.OctetString(gost34311(tst_info(asn1.GOST34311, imprint))).dump()
+    assert good.count(digest_value) == 1
+    bad = good.replace(digest_value, b"\x02" + digest_value[1:])
+    with pytest.raises(TimeStampError, match=r"^the TSA's signature: cannot read the signed data"):
+        cades.check_timestamp(bad, signature)
+    with pytest.raises(SignatureError, match=r"^the signature time-stamp does not check out: "):
+        cades.verify(_with_tokens(bad))
 
 
 # -- time-stamps found by verify() -------------------------------------------------------

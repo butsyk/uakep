@@ -7,6 +7,7 @@ Notable changes to uakep, newest first. The format follows [Keep a Changelog](ht
 ### Fixed
 
 - `verify()` no longer hangs on a certificate that spells out a curve over a made-up field. Such a certificate takes no key to make. A curve given by its parameters must now have a field degree from 163 to 509, an irreducible field polynomial, a coefficient `b` inside the field and an order that fits the curve.
+- `verify()` and `unwrap()` raise `SignatureError` for signed data they cannot read, however it is damaged. An empty or mistyped attribute value used to escape as `IndexError` or a plain `ValueError`. A damaged time-stamp token is a `TimeStampError` in the same way.
 
 ## [0.1.0] - 2026-11-13
 
